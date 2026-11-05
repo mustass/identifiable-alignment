@@ -1,0 +1,5 @@
+dataset_name: mnist
+dataset_root: data/mnist
+batch_size: 128
+image_shape: [28, 28, 1]
+val_fraction: 0.1

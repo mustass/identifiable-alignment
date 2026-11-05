@@ -1,0 +1,6 @@
+# data/celeba holds celeba_{train,val,test}_images.npy and celeba_{train,val,test}_labels.npy
+# (see ngma.data.datasets.get_celeba_arrays).
+dataset_name: celeba
+dataset_root: data/celeba
+batch_size: 256
+image_shape: [64, 64, 3]

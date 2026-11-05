@@ -1,0 +1,10 @@
+# Same architecture with a VampPrior of 200 pseudo-inputs (a CelebA pseudo-input is
+# 64*64*3 parameters and every step encodes all K of them).
+class_name: ngma.models.celeba_vae_ilms.VAE
+params:
+  z_dim: 32
+  num_decoders: 8
+  prior: vamp
+  vamp_K: 200
+  vamp_tied_logvar_min: null
+  learn_sigma: true

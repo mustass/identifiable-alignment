@@ -1,0 +1,27 @@
+# VAE of the celeba gauss model pair. One model per seed:
+#   python scripts/train_vae.py --config-name vae_celeba_gauss training.seed=42 general.run_name=vae_a
+# (seeds: a=42, b=123, c=7, d=8).
+defaults:
+  - datamodule: celeba
+  - loss: nelbo_sigma
+  - model: celeba_vae_ilms
+  - optimizer: adamax
+  - scheduler: warm_exp_decay
+  - grad_clipping: global_norm
+  - training: train
+  - _self_
+
+general:
+  run_name: unnamed_run
+
+training:
+  checkpoint: checkpoints/celeba_gauss/${general.run_name}
+  num_epochs: 150
+
+loss:
+  params:
+    beta_warmup_epochs: 30
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d_%H-%M-%S}

@@ -1,0 +1,25 @@
+# Data on the sphere (Fig. 3a, b): the settings of experiments/sphere/run.py. The measures
+# and the ground-truth rotation are in configs/sphere_measures.yaml; the per-run axes (density,
+# sampling regime, seed) are command-line arguments.
+n_points: 2000                                                   # per side
+landmark_ks: [3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 1536]   # plus the full cloud, k = n
+gw_densities: [mixture_vmf, mixture_vmf_eq]   # entropic GW runs on the mixtures only
+save_couplings: true                           # every plan under <out>/.../couplings/
+
+# LDD signatures: B radii spread evenly over [0, pi], the same grid on both sides. The landmarks
+# are ordered by greedy D-optimal design on the signatures, and past its numerical rank by
+# farthest-point sampling in signature distance (experiments/sphere/run.py).
+ldd:
+  n_bins: 256
+  r_max: pi
+
+# The LDD-LP is solved exactly by network simplex (ot.emd). Entropic GW is NGMA's: both distance
+# matrices divided by the average of their means, epsilon annealed from eps_start to eps_final
+# in n_steps stages, each started from the previous plan, float64, outer and inner tolerance
+# tol, at most max_iter Frank-Wolfe steps per stage.
+gw_anneal:
+  eps_start: 1.0
+  eps_final: 1.0e-3
+  n_steps: 4
+  max_iter: 500
+  tol: 1.0e-9

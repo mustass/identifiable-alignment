@@ -1,0 +1,22 @@
+# VAE of the fmnist gauss model pair. One model per seed:
+#   python scripts/train_vae.py --config-name vae_fmnist_gauss training.seed=42 general.run_name=vae_a
+# (seeds: a=42, b=123, c=7, d=8).
+defaults:
+  - datamodule: fmnist
+  - loss: nelbo_sigma
+  - model: fmnist_vae_ens
+  - optimizer: adamax
+  - scheduler: warm_exp_decay
+  - grad_clipping: global_norm
+  - training: train
+  - _self_
+
+general:
+  run_name: unnamed_run
+
+training:
+  checkpoint: checkpoints/fmnist_gauss/${general.run_name}
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d_%H-%M-%S}

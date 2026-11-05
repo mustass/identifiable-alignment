@@ -1,0 +1,5 @@
+class_name: ngma.models.vae.VAE
+params:
+  z_dim: 16
+  num_decoders: 8
+  learn_sigma: true
