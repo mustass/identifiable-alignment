@@ -13,13 +13,27 @@ ldd:
   n_bins: 256
   r_max: pi
 
-# The LDD-LP is solved exactly by network simplex (ot.emd). Entropic GW is NGMA's: both distance
-# matrices divided by the average of their means, epsilon annealed from eps_start to eps_final
-# in n_steps stages, each started from the previous plan, float64, outer and inner tolerance
-# tol, at most max_iter Frank-Wolfe steps per stage.
+# The LDD-LP's cost is W_2^2 between the distance distributions of two landmarks, each landmark's
+# distances to all n points of its sample (ngma.geometry.ldd.tlb_cost); it is solved exactly by
+# network simplex (ot.emd). Entropic GW is NGMA's: both distance matrices divided by the average of
+# their means, epsilon annealed from eps_start to eps_final in n_steps stages, each started from the
+# previous plan, float64, outer and inner tolerance tol, at most max_iter Frank-Wolfe steps per stage,
+# at most 1000 inner Sinkhorn iterations per step.
 gw_anneal:
   eps_start: 1.0
   eps_final: 1.0e-3
   n_steps: 4
   max_iter: 500
   tol: 1.0e-9
+
+# NGMA's coupling (ngma.alignment.couplings.fgw_coupling): the anneal of gw_anneal with the LDD-LP's
+# cost as a linear term, its weight annealed from 1 at the first stage to 0 at the last (alpha ann),
+# epsilons mixed geometrically between GW's and the LDD-LP's (gmix), the inner Sinkhorn's potentials
+# carried across steps and stages, at most sink_max_iter inner iterations per step, as for GW.
+fgw:
+  densities: [mixture_vmf, mixture_vmf_eq]
+  modes: [independent]
+  alpha: ann
+  eps_rule: gmix
+  warm_duals: true
+  sink_max_iter: 1000

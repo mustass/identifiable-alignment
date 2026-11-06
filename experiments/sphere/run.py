@@ -3,9 +3,17 @@
 
 One run is one (measure, sampling regime, seed). It draws the two samples, builds their geodesic
 distance matrices and LDD signatures, orders landmarks on each side by D-optimal design, and for
-every landmark count k (and for the full cloud, k = n) solves the LDD-LP, and on the mixtures
-also NGMA's annealed entropic GW, on the k landmarks. Each coupling is turned into a rotation by
-weighted Procrustes over SO(3), and the error is the angle between that rotation and the true one.
+every landmark count k (and for the full cloud, k = n) solves on the k landmarks:
+
+  ldd_lp  the LDD-LP, its cost W_2^2 between the distance distributions of two landmarks (each
+          landmark's distances to all n points of its sample), solved exactly by network simplex;
+  gw      NGMA's annealed entropic GW alone, on the mixtures;
+  fgw     NGMA's coupling, the same anneal with the LDD-LP's cost as a linear term whose weight
+          falls from 1 to 0 over the stages, on the mixtures with independent samples.
+
+Each coupling is turned into a rotation by weighted Procrustes over SO(3), and the error is the
+angle between that rotation and the true one. The full-cloud fused coupling is the slow case: one
+to three hours on one CPU thread.
 
 Measures: `configs/sphere_measures.yaml` (uniform, vmf, mixture_vmf, mixture_vmf_eq) with the
 ground-truth rotation. Solver settings: `configs/sphere.yaml`.
@@ -30,11 +38,12 @@ import numpy as np
 import yaml
 
 from ngma.alignment.closed_form import fit_orthogonal
+from ngma.alignment.couplings import fgw_coupling
 from ngma.alignment.gw import gw_entropic_jax
 from ngma.alignment.schedule import build_eps_schedule
 from ngma.data.sphere import (load_sphere_measures, make_sphere_experiment, sphere_measure,
                               sphere_measures_hash)
-from ngma.geometry.ldd import compute_ldd_signatures, greedy_dopt_selection
+from ngma.geometry.ldd import compute_ldd_signatures, greedy_dopt_selection, tlb_cost
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -70,14 +79,6 @@ def coupling_diagnostics(pi: np.ndarray) -> dict:
                 and max_row_err < 0.1 * target and max_col_err < 0.1 * target)
     return dict(total_mass=total_mass, max_row_err=max_row_err, max_col_err=max_col_err,
                 has_nan=has_nan, has_inf=has_inf, is_valid=is_valid)
-
-
-def ldd_lp_cost(Ha: np.ndarray, Hb: np.ndarray, dr: float) -> np.ndarray:
-    """The cost of the LDD-LP: the squared L2 distance between the signature vectors of a point
-    on each side, times the spacing dr of the shared radius grid, in float64."""
-    A, B = Ha.astype(np.float64), Hb.astype(np.float64)
-    sq = (A ** 2).sum(1)[:, None] + (B ** 2).sum(1)[None, :] - 2.0 * A @ B.T
-    return np.maximum(sq, 0.0) * float(dr)
 
 
 def ldd_lp(M: np.ndarray) -> tuple[np.ndarray, dict]:
@@ -133,14 +134,15 @@ def pair_accuracy(pi: np.ndarray, idx_a, idx_b, inv_sigma: np.ndarray) -> tuple[
 
 
 def run(density: str, sample_mode: str, seed: int, out_root: str, cfg: dict,
-        n: int, landmark_ks: list, gw_densities: list, save_couplings: bool) -> str:
+        n: int, landmark_ks: list, save_couplings: bool) -> str:
     import jax
     jax.config.update("jax_enable_x64", True)
     np.random.seed(0)
 
     seed_a, seed_b = 2 * seed, 2 * seed + 1
-    ldd_cfg, gw_cfg = cfg["ldd"], cfg["gw_anneal"]
-    couplings = ["ldd_lp"] + (["gw"] if density in gw_densities else [])
+    ldd_cfg, gw_cfg, fgw_cfg = cfg["ldd"], cfg["gw_anneal"], cfg["fgw"]
+    couplings = (["ldd_lp"] + (["gw"] if density in cfg["gw_densities"] else [])
+                 + (["fgw"] if density in fgw_cfg["densities"] and sample_mode in fgw_cfg["modes"] else []))
     gw_schedule = build_eps_schedule(float(gw_cfg["eps_start"]), float(gw_cfg["eps_final"]),
                                      n_steps=int(gw_cfg["n_steps"]))
     r_max = np.pi if str(ldd_cfg["r_max"]) == "pi" else float(ldd_cfg["r_max"])
@@ -161,7 +163,8 @@ def run(density: str, sample_mode: str, seed: int, out_root: str, cfg: dict,
         inv_sigma = np.argsort(sigma)
         Zb = (Za @ R_star.T)[sigma].astype(np.float32)
 
-    # geodesic distances and signatures on one radius grid shared by both sides
+    # geodesic distances, and the LDD signatures that order the landmarks, on one radius grid
+    # shared by both sides
     Ca = sphere_distance_matrix(Za)
     Cb = Ca[np.ix_(sigma, sigma)] if sample_mode == "permuted" else sphere_distance_matrix(Zb)
     Ha, radii_a = compute_ldd_signatures(Ca, n_bins=int(ldd_cfg["n_bins"]), use_quantiles=False,
@@ -183,8 +186,9 @@ def run(density: str, sample_mode: str, seed: int, out_root: str, cfg: dict,
     results = {
         "density": density, "geometry": "round", "sample_mode": sample_mode, "seed": seed,
         "n": n, "R_star": R_star, "sigma": sigma, "density_kwargs": density_kwargs,
-        "couplings": couplings, "ldd_lp_solver": "emd", "ldd_lp_cost": "cdf",
-        "gw_schedule": gw_schedule, "gw_anneal": dict(gw_cfg), "map_fit": "closed_form",
+        "couplings": couplings, "ldd_lp_solver": "emd", "ldd_lp_cost": "tlb",
+        "gw_schedule": gw_schedule, "gw_anneal": dict(gw_cfg), "fgw": dict(fgw_cfg),
+        "map_fit": "closed_form",
         "ldd_grid": {"n_bins": int(ldd_cfg["n_bins"]), "use_quantiles": False, "r_max": r_max,
                      "dr": dr},
         "dopt_fill": "maxmin",
@@ -198,21 +202,40 @@ def run(density: str, sample_mode: str, seed: int, out_root: str, cfg: dict,
         logging.info(f"[{ci + 1}/{len(cases)}] k={k_label}")
         if k_label == "full":
             idx_a = idx_b = None
-            Za_k, Zb_k, Ca_k, Cb_k, Ha_k, Hb_k = Za, Zb, Ca, Cb, Ha, Hb
+            Za_k, Zb_k, Ca_k, Cb_k = Za, Zb, Ca, Cb
         else:
             idx_a, idx_b = order_a[:k_label], order_b[:k_label]
             Za_k, Zb_k = Za[idx_a], Zb[idx_b]
             Ca_k, Cb_k = Ca[np.ix_(idx_a, idx_a)], Cb[np.ix_(idx_b, idx_b)]
-            Ha_k, Hb_k = Ha[idx_a], Hb[idx_b]
         case = {"k": k_label, "method": method, "idx_a": idx_a, "idx_b": idx_b,
                 "coupling_results": {}}
 
+        # each landmark's distances to all n points of its sample: the rows whose distance
+        # distributions the LDD-LP's cost, and the fused coupling's linear term, compare
+        rows_a = Ca if idx_a is None else Ca[np.asarray(idx_a)]
+        rows_b = Cb if idx_b is None else Cb[np.asarray(idx_b)]
         for coup in couplings:
             t0 = time.time()
             if coup == "ldd_lp":
-                pi_k, diag = ldd_lp(ldd_lp_cost(Ha_k, Hb_k, dr))
+                pi_k, diag = ldd_lp(tlb_cost(rows_a, rows_b))
                 dist = diag["lp_cost"]
                 diag.update(coupling_diagnostics(pi_k), timed_out=False)
+            elif coup == "fgw":
+                pi_k, finfo = fgw_coupling(Ca_k, Cb_k, fgw_cfg["alpha"], gw_schedule,
+                                           max_iter=int(gw_cfg["max_iter"]), tol=float(gw_cfg["tol"]),
+                                           dtype="float64", normalize="shared",
+                                           eps_rule=fgw_cfg["eps_rule"], warm_duals=bool(fgw_cfg["warm_duals"]),
+                                           lin_rows=(rows_a, rows_b),
+                                           sink_max_iter=int(fgw_cfg["sink_max_iter"]))
+                pi_k = np.asarray(pi_k, dtype=np.float64)
+                dist, stages = float(finfo["fused_cost"]), finfo["stages"]
+                diag = coupling_diagnostics(pi_k)
+                diag.update(timed_out=False, gw_stages=stages, gw_scale=finfo["scale"],
+                            fgw_eps_per_stage=finfo.get("eps_per_stage"),
+                            gw_budget_limited=any(not st["converged"] for st in stages))
+                logging.info("    fused stages: " + "; ".join(
+                    f"alpha={st['alpha']:.2f} eps={st['eps']:.3g} {st['iters']} it "
+                    f"{'conv' if st['converged'] else 'BUDGET'} {st['seconds']:.1f}s" for st in stages))
             else:
                 pi_k, dist, stages, scale = gw_annealed(Ca_k, Cb_k, gw_schedule,
                                                         int(gw_cfg["max_iter"]),
@@ -226,7 +249,7 @@ def run(density: str, sample_mode: str, seed: int, out_root: str, cfg: dict,
             t_coup = time.time() - t0
             if sigma is not None:
                 diag["pair_acc"], diag["pair_n"] = pair_accuracy(pi_k, idx_a, idx_b, inv_sigma)
-            dist_key = "lh2_dist" if coup == "ldd_lp" else "gw2_dist"
+            dist_key = {"ldd_lp": "lh2_dist", "gw": "gw2_dist", "fgw": "fused_dist"}[coup]
             if not diag["is_valid"]:
                 logging.warning(f"  [INVALID COUPLING] {coup} k={k_label}: "
                                 f"mass={diag['total_mass']:.4g} row_err={diag['max_row_err']:.4g} "
@@ -282,8 +305,7 @@ def main():
         cfg = yaml.safe_load(fh)
     n = int(a.n_points if a.n_points is not None else cfg["n_points"])
     ks = list(a.ks if a.ks is not None else cfg["landmark_ks"])
-    run(a.density, a.mode, a.seed, a.out, cfg, n, ks, list(cfg["gw_densities"]),
-        bool(cfg.get("save_couplings", True)))
+    run(a.density, a.mode, a.seed, a.out, cfg, n, ks, bool(cfg.get("save_couplings", True)))
 
 
 if __name__ == "__main__":

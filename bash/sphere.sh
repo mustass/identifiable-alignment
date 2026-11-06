@@ -1,7 +1,9 @@
 #!/bin/bash
 # Data on the sphere, Fig. 3: the alignment runs (4 measures x 2 regimes x 10 seeds), their
 # collection, the margin test (4 measures x 3 seeds) and the figure. CPU only; PAR runs at a
-# time, one thread each. A run whose results.pkl exists is skipped, so the script resumes.
+# time, one thread each. A run whose results.pkl exists is skipped, so the script resumes. The 20
+# runs with NGMA's coupling (the mixtures, independent samples) take hours each, most of it the
+# full cloud (k = n); they are started first.
 #
 #   bash bash/sphere.sh                       # everything, into results/sphere
 #   OUT=/tmp/sphere PAR=4 bash bash/sphere.sh
@@ -12,7 +14,7 @@ PY=${PY:-python}
 OUT=${OUT:-$REPO/results/sphere}
 PAR=${PAR:-8}
 SEEDS=${SEEDS:-"10 11 12 13 14 15 16 17 18 19"}
-DENSITIES=${DENSITIES:-"mixture_vmf mixture_vmf_eq uniform vmf"}   # the GW cells first: they take longest
+DENSITIES=${DENSITIES:-"mixture_vmf mixture_vmf_eq uniform vmf"}   # the mixtures first: they take longest
 MODES=${MODES:-"independent permuted"}
 MARGIN_SEEDS=${MARGIN_SEEDS:-"0 1 2"}
 mkdir -p "$OUT/logs" "$OUT/margin"
@@ -41,7 +43,8 @@ export -f one_run one_margin
 export OUT REPO PY
 
 # 1. the alignment runs
-for d in $DENSITIES; do for m in $MODES; do for s in $SEEDS; do echo "$d $m $s"; done; done; done \
+# independent samples first, mixtures first: the runs with NGMA's coupling take longest
+for m in $MODES; do for d in $DENSITIES; do for s in $SEEDS; do echo "$d $m $s"; done; done; done \
     | xargs -P "$PAR" -L 1 bash -c 'one_run "$0" "$1" "$2"'
 PYTHONPATH="$REPO/src" "$PY" experiments/sphere/collect.py --root "$OUT" --out-dir "$OUT"
 

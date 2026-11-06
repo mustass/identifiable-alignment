@@ -121,7 +121,8 @@ def fgw_alphas_per_stage(alpha, Ca_n, Cb_n, M, n_stages: int):
 def fgw_coupling(Ca: np.ndarray, Cb: np.ndarray, alpha, eps_schedule, max_iter: int = 500,
                  tol: float = 1e-9, dtype: str = "float64", normalize: str = "shared",
                  eps_rule: str = "gw", ldd_eps_rel: float = FGW_LDD_EPS_REL,
-                 sink_max_iter: int = 100_000, warm_duals: bool = False) -> tuple[np.ndarray, dict]:
+                 sink_max_iter: int = 100_000, warm_duals: bool = False,
+                 lin_rows=None) -> tuple[np.ndarray, dict]:
     """The fused coupling of two distance matrices.
 
     The distances are normalised as GW's are (shared: both over 0.5 (mean_a + mean_b);
@@ -130,7 +131,13 @@ def fgw_coupling(Ca: np.ndarray, Cb: np.ndarray, alpha, eps_schedule, max_iter: 
     plan, with at most max_iter Frank-Wolfe steps stopping at tol, the stage weights of
     `fgw_alphas_per_stage` and the epsilons of `fgw_eps_schedule`. warm_duals carries the
     inner Sinkhorn's potentials across Frank-Wolfe steps and, rescaled by eps_prev / eps,
-    across stages. Returns (plan in the solver's dtype, record of the solve).
+    across stages.
+
+    lin_rows: optional (rows_a, rows_b), each point's distances to a larger sample on its side
+    (on the sphere, each landmark's distances to all sample points). M is then `tlb_cost` of
+    those rows, divided by the same scale as Ca and Cb.
+
+    Returns (plan in the solver's dtype, record of the solve).
     """
     Ca, Cb = np.asarray(Ca), np.asarray(Cb)
     if normalize == "perside":
@@ -139,7 +146,12 @@ def fgw_coupling(Ca: np.ndarray, Cb: np.ndarray, alpha, eps_schedule, max_iter: 
     else:
         scale = 0.5 * (float(Ca.mean()) + float(Cb.mean()))
         Ca_n, Cb_n = (Ca / scale).astype(np.float32), (Cb / scale).astype(np.float32)
-    M = tlb_cost(Ca_n, Cb_n)
+    if lin_rows is None:
+        M = tlb_cost(Ca_n, Cb_n)
+    else:
+        s_a, s_b = scale if isinstance(scale, list) else (scale, scale)
+        M = tlb_cost((np.asarray(lin_rows[0]) / s_a).astype(np.float32),
+                     (np.asarray(lin_rows[1]) / s_b).astype(np.float32))
     schedule = [float(e) for e in eps_schedule]
     per_stage, rule = fgw_alphas_per_stage(alpha, Ca_n, Cb_n, M, len(schedule))
     eps_used, eps_info = fgw_eps_schedule(schedule, per_stage, M, ldd_eps_rel, eps_rule)

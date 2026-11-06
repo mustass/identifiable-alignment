@@ -116,8 +116,11 @@ results/tables/
 `bash bash/sphere.sh` runs the alignments on the four measures of `configs/sphere_measures.yaml`
 (independent and permuted samples, seeds 10–19, `experiments/sphere/run.py`, settings in
 `configs/sphere.yaml`), collects them (`collect.py`), runs the margin test (`margin_test.py`,
-seeds 0–2) and draws the figure (`figure.py`). The LDD-LP is solved exactly by network simplex;
-the GW is NGMA's annealed GW; the rotation is fitted in closed form. CPU only.
+seeds 0–2) and draws the figure (`figure.py`). The LDD-LP compares two landmarks by W₂² between
+their distance distributions and is solved exactly by network simplex. Panel (b) adds, on the
+mixtures with independent samples, NGMA's coupling and its annealed GW alone. The rotation is
+fitted in closed form. CPU only; the full-cloud fused coupling takes one to three hours per run on
+one thread, so the whole grid takes about a day at eight runs in parallel.
 
 ## The lung experiment: Figure 4 and the lung table
 

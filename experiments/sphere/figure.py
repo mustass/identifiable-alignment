@@ -4,7 +4,7 @@
   (a) the rotation error of the LDD-LP on independent samples against the number of landmarks k,
       for the four measures: the median over seeds with a band from the best to the worst seed;
       with permuted samples the error is zero for every measure (one black line);
-  (b) the LDD-LP against annealed entropic GW on P_mix;
+  (b) on P_mix, the LDD-LP, NGMA's coupling and annealed entropic GW alone;
   (c) the margin test: xi_hat(t) = m_hat(t) / 2 eps_N at `--margin-k` query points, mean and s.d.
       over seeds, up to the largest t at which every measure keeps `--min-pairs` query pairs.
 
@@ -34,8 +34,11 @@ MEASURES = [("uniform", r"$P_{\mathrm{unif}}$, $\mathrm{Aut}=O(3)$", "#5c5c5c", 
             ("vmf", r"$P_{\mathrm{vMF}}$, $\mathrm{Aut}\cong O(2)$", "#a3a3a3", (4, 1.4), "v"),
             ("mixture_vmf_eq", r"$P_{\mathrm{mix}}$, equal parameters", "#e87ba4", (1.6, 1.4), "s"),
             ("mixture_vmf", r"$P_{\mathrm{mix}}$", "#4a3aa7", (5, 1.4, 1.4, 1.4), "D")]
-# the two couplings of panel (b): colour and marker
-COUPLINGS = [("LDD-LP", "ldd_lp", "#eb6834", "s"), ("entropic GW", "gw", "#2a78d6", "o")]
+# the three couplings of panel (b): label, key, colour, marker, dash pattern (None: solid). Entropic
+# GW alone is dashed with hollow markers, so it stays visible where it lands on NGMA's coupling.
+COUPLINGS = [("LDD-LP", "ldd_lp", "#eb6834", "s", None),
+             ("NGMA's coupling", "fgw", "#2a78d6", "o", None),
+             ("entropic GW", "gw", "#5c5c5c", "o", (4, 1.6))]
 
 
 def style(ncols):
@@ -91,9 +94,9 @@ def load_margin_sweep(path, k):
 
 
 def sphere_figure(raw, full_raw, margin_sweep, out, margin_k=2000, min_pairs=1000):
-    ldd = load_landmarks(raw, "ldd_lp")
-    gw = load_landmarks(raw, "gw")
-    for series, coupling in ((ldd, "ldd_lp"), (gw, "gw")):
+    series_of = {key: load_landmarks(raw, key) for _, key, *_ in COUPLINGS}
+    ldd, gw = series_of["ldd_lp"], series_of["gw"]
+    for coupling, series in series_of.items():
         for key, by_n in load_full(full_raw, coupling).items():
             if len(by_n) != 1 or any(n in series[key] for n in by_n):
                 raise SystemExit(f"full-cloud runs of {key} at n = {sorted(by_n)} clash with the k grid")
@@ -116,13 +119,14 @@ def sphere_figure(raw, full_raw, margin_sweep, out, margin_k=2000, min_pairs=100
                    marker="o", markersize=1.8)
             a.text(kp[len(kp) // 2], 0.1, "permuted samples, all four", fontsize=6, ha="center",
                    va="bottom")
-        for name, key, colour, marker in COUPLINGS:
-            s = (ldd if key == "ldd_lp" else gw).get(("mixture_vmf", "independent"), {})
+        for name, key, colour, marker, dash in COUPLINGS:
+            s = series_of[key].get(("mixture_vmf", "independent"), {})
             ks = sorted(k for k in s if s[k])
             med = [st.median(s[k]) for k in ks]
             lo, hi = [min(s[k]) for k in ks], [max(s[k]) for k in ks]
             c.fill_between(ks, lo, hi, color=colour, alpha=0.18, linewidth=0)
-            c.plot(ks, med, color=colour, marker=marker, markersize=2.5, linewidth=1.1, label=name)
+            c.plot(ks, med, color=colour, marker=marker, markersize=2.5, linewidth=1.1, label=name,
+                   **({"dashes": dash, "markerfacecolor": "white"} if dash else {}))
         for ax, title in ((a, "(a) LDD-LP, four measures"), (c, r"(b) $P_{\mathrm{mix}}$")):
             ax.axhline(5.0, color="black", linewidth=0.6, linestyle=":")
             ax.set_xscale("log", base=2)
@@ -140,7 +144,9 @@ def sphere_figure(raw, full_raw, margin_sweep, out, margin_k=2000, min_pairs=100
             ax.set_title(title, loc="left", fontsize=8)
             _axes(ax)
         a.set_ylabel("rotation error (°)")
-        c.legend(frameon=False, fontsize=6.5, loc="upper right", handlelength=1.5)
+        # lower left: below 5 degrees at small k nothing is drawn, while GW fills the upper right
+        c.legend(frameon=False, fontsize=6, loc="lower left", handlelength=1.3, labelspacing=0.2,
+                 handletextpad=0.4, borderaxespad=0.1, borderpad=0.1)
 
         by = collections.defaultdict(lambda: collections.defaultdict(list))
         npairs = collections.defaultdict(lambda: collections.defaultdict(list))
@@ -168,9 +174,9 @@ def sphere_figure(raw, full_raw, margin_sweep, out, margin_k=2000, min_pairs=100
         fig.legend(h, l, loc="outside upper center", ncol=4, frameon=False, fontsize=6.5)
         fig.savefig(out)
         plt.close(fig)
-    return {"t_max": t_max,
-            "ldd": {k: (st.median(v), max(v)) for k, v in sorted(ldd.get(("mixture_vmf", "independent"), {}).items())},
-            "gw": {k: (st.median(v), max(v)) for k, v in sorted(gw.get(("mixture_vmf", "independent"), {}).items())}}
+    return {"t_max": t_max, **{key: {k: (st.median(v), max(v)) for k, v in
+                                     sorted(series_of[key].get(("mixture_vmf", "independent"), {}).items())}
+                               for _, key, *_ in COUPLINGS}}
 
 
 def main():
@@ -186,9 +192,9 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     info = sphere_figure(a.raw, a.full, a.margin_sweep, a.out, a.margin_k, a.min_pairs)
     print(f"wrote {a.out}; (c) up to t = {info['t_max']:.3f}")
-    for name in ("ldd", "gw"):
+    for name, key, *_ in COUPLINGS:
         print(f"  {name} on P_mix, independent samples: " + ", ".join(
-            f"k={k}: median {m:.2f} / worst {w:.2f}" for k, (m, w) in info[name].items()))
+            f"k={k}: median {m:.2f} / worst {w:.2f}" for k, (m, w) in info[key].items()))
 
 
 if __name__ == "__main__":

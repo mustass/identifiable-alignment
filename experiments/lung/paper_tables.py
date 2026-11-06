@@ -196,6 +196,21 @@ def main():
             ("RelGeo$^\\dagger$", lambda s, k, m: base[(s, k, "RelGeo")][m]),
             ("map", lambda s, k, m: ngma[(s, k, "8")].get(MAPC[m], []) if m in MAPC else []),
             ("Procrustes", lambda s, k, m: ngma[(s, k, "8")].get(PROC[m], []))]
+    # Laid out as Table 1: methods down in groups, the six settings across, mean with a small s.d., at
+    # natural size (scaled to the text width, ten method columns made it unreadable). The best R@1 or
+    # accuracy of a column among the methods (not the two maps fitted on the true pairs) is in bold.
+    groups = (("", cols[:3]), ("unpaired baselines", cols[3:7]), ("label-informed", cols[7:8]),
+              ("fitted on the true pairs", cols[8:]))
+    methods = cols[:8]
+
+    def cell(vals, bold=False):
+        v = [x for x in vals if x is not None]
+        if not v:
+            return "--"
+        m = f"{np.mean(v):.3f}"
+        return (f"\\textbf{{{m}}}" if bold else m) + f"{{\\scriptsize$\\pm${np.std(v):.3f}}}"
+
+    settings = [(k, sz) for k, _ in KINDS for sz in SIZES]
     L = [HEADER.format(src="results/lung_table.csv and baselines/lung_baselines.csv"),
          "\\begin{table}[t]\n\\centering\n",
          "\\caption{scVI models of Tabula Sapiens lung cells (Appendix~\\ref{app:lung}): NGMA against the unpaired "
@@ -204,24 +219,31 @@ def main():
          "among the $10{,}000$ evaluation cells (R@1, chance $10^{-4}$) and cell-type accuracy of the nearest "
          "cell (chance " + f"{chance_type:.3f}" + "), scored as in Table~\\ref{tab:alignment}. GENOT-Q runs on its "
          "own GW coupling with the Euclidean cost or with the pullback cost NGMA uses. NGMA, one decoder, reads "
-         "the pullback metric of the scVI decoder alone instead of the ensemble of eight. The last two columns "
-         "are not methods. They are NGMA's map class and the orthogonal map, both fitted on the true pairs "
-         "and scored $a \\to b$. Mean $\\pm$ s.d.\\ over two pairings and three draws. "
+         "the pullback metric of the scVI decoder alone instead of the ensemble of eight. The last two rows of "
+         "each block are not methods. They are NGMA's map class and the orthogonal map, both fitted on the "
+         "true pairs and scored $a \\to b$. Mean $\\pm$ s.d.\\ over two pairings and three draws; the best "
+         "method in each column is in bold. "
          "$^\\dagger$RelGeo builds its anchors from the cell-type labels of both models.}\n"
-         "\\label{tab:lung_baselines}\n\\vspace{4pt}\n\\scriptsize\n\\resizebox{\\textwidth}{!}{%\n"
-         "\\begin{tabular}{ll" + "c" * len(cols) + "}\n\\toprule\n",
-         " & & NGMA & NGMA, Euclidean & NGMA, one decoder & Rosetta & mini-vec2vec & GENOT-Q, Eucl.\\ cost "
-         "& GENOT-Q, pullback cost & RelGeo$^\\dagger$ & \\multicolumn{2}{c}{fitted on true pairs} \\\\\n"
-         "\\cmidrule(lr){11-12}\n",
-         "Cells & training size &  &  &  &  &  &  &  &  & map & Procrustes \\\\\n\\midrule\n"]
+         "\\label{tab:lung_baselines}\n\\vspace{4pt}\n\\small\n\\setlength{\\tabcolsep}{3.5pt}\n"
+         "\\begin{tabular}{l" + "c" * len(settings) + "}\n\\toprule\n",
+         " & " + " & ".join(f"\\multicolumn{{{len(SIZES)}}}{{c}}{{{kname}}}" for _, kname in KINDS) + " \\\\\n",
+         "".join(f"\\cmidrule(lr){{{2 + i * len(SIZES)}-{1 + (i + 1) * len(SIZES)}}}" for i in range(len(KINDS))) + "\n",
+         "Training size & " + " & ".join(f"{sz:,}".replace(",", "{,}") for _, sz in settings) + " \\\\\n"]
     blocks = (("r1", "R@1"), ("type", "cell-type accuracy"))
-    for bi, (m, title) in enumerate(blocks):
-        L.append(f"\\multicolumn{{{len(cols) + 2}}}{{l}}{{\\emph{{{title}}}}} \\\\\n")
-        for kind, kname in KINDS:
-            for s in SIZES:
-                L.append(f"{kname} & {s:,} & " + " & ".join(ms(f(s, kind, m)) for _, f in cols) + " \\\\\n")
-        L.append("\\midrule\n" if bi < len(blocks) - 1 else "")
-    L.append("\\bottomrule\n\\end{tabular}\n}\n\\end{table}\n")
+    for m, title in blocks:
+        best = [max((np.mean(v) for v in ([x for x in f(sz, k, m) if x is not None] for _, f in methods) if v),
+                    default=None) for k, sz in settings]
+        L.append(f"\\midrule\n\\multicolumn{{{len(settings) + 1}}}{{l}}{{\\emph{{{title}}}}} \\\\\n")
+        for gi, (gname, gcols) in enumerate(groups):
+            if gname:
+                L.append(f"\\addlinespace[2pt]\n\\multicolumn{{{len(settings) + 1}}}{{l}}{{\\quad {gname}}} \\\\\n")
+            for name, f in gcols:
+                vals = [[x for x in f(sz, k, m) if x is not None] for k, sz in settings]
+                is_method = (name, f) in methods
+                L.append(name + " & " + " & ".join(
+                    cell(v, bold=is_method and v and f"{np.mean(v):.3f}" == f"{best[i]:.3f}")
+                    for i, v in enumerate(vals)) + " \\\\\n")
+    L.append("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
     (out / "tab_lung_baselines.tex").write_text("".join(L))
 
     # --- tab_lung_resolution.tex: resolution and the ensemble ----------------------------------

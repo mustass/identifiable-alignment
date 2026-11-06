@@ -11,7 +11,8 @@ and writes into --out-dir:
                          converged, seconds), the LP status, the pairing accuracy in the
                          permuted regime and the D-opt switch index
 
-The couplings are named as the runs name them: ldd_lp (the exact LP) and gw (annealed GW).
+The couplings are named as the runs name them: ldd_lp (the exact LP), gw (annealed GW alone) and
+fgw (NGMA's coupling). The GW columns of sphere_runs.csv also record the fused coupling's stages.
 
     PYTHONPATH=src python experiments/sphere/collect.py --root results/sphere --out-dir results/sphere
 """
