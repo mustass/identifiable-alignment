@@ -1,31 +1,183 @@
-# Neural Gromov-Monge Alignment (NGMA)
+<div align="center">
 
-Code for *Identifiable alignment of unpaired representations*. Two latent spaces are trained
-independently on unpaired data; each is treated as a metric measure space under its decoder's
-pullback geometry, and a measure-preserving isometry between them is fitted from the geometry
-alone, with no shared inputs, no anchors and no labels.
+# Identifiable alignment of unpaired representations
 
-The repository reproduces three results of the paper. Each has one driver in `bash/` and its own
-code in `experiments/`:
+**Stas Syrota, Albert Lopez I Serrano, Johanne Franck, Søren Hauberg**<br>
+Technical University of Denmark
 
-| result | driver | code |
-|---|---|---|
-| Table 1: instance retrieval between independently trained VAEs on MNIST, FashionMNIST, CelebA | `bash/images.sh` | `experiments/images/` |
-| Figure 3: alignment and the margin test on the sphere | `bash/sphere.sh` | `experiments/sphere/` |
-| Figure 4 and the lung table: scVI models of Tabula Sapiens lung cells | `bash/lung.sh` | `experiments/lung/` |
+**NeurIPS 2026**
 
-## Install
+<!-- TODO: paper and arXiv links -->
+[Results](#results) · [How NGMA works](#ngma-as-the-code-runs-it) · [Reproducing the paper](#reproducing-the-paper) · [Citation](#citation)
 
-```bash
-pip install -e .          # Python >= 3.10; JAX with GPU support as your platform requires
-export PYTHONPATH=src     # every entry point needs this
-```
+</div>
 
-Two parts run in their own environments: Rosetta and mini-vec2vec through the authors' package
-(`pip install -e '.[rosetta]'`, see `baselines/rosetta.py`), and the lung experiment's scVI
-models (`pip install -e '.[lung]'`).
+Train two models on the same kind of data, with a different prior, loss, architecture or set of
+training points, and each puts a given data point somewhere else in its latent space. *Unpaired
+alignment* asks for the map between the two latent spaces from the two clouds of representations
+alone, with no data point known to both. That only makes sense if the two spaces share something
+the map preserves. We show that, under a precise form of the manifold hypothesis, they share the
+pullback of the data metric. The alignment map preserves it and the distribution of
+representations, and it is the only map that does so if and only if the data distribution breaks
+every symmetry of the data manifold, which holds generically. Our method, Neural Gromov–Monge
+Alignment (NGMA), uses no pairs and no labels.
 
-## The method, as the code runs it
+<p align="center"><img src="assets/distances.png" width="90%" alt="Pairwise distances of the same images in two VAEs: Euclidean distances scatter widely and differ in scale by five; pullback distances lie along the diagonal."></p>
+
+<sub>Two VAEs trained on the same FashionMNIST images, one with a VampPrior and one with a
+Gaussian prior. Each bin counts pairs of the same two held-out images, measured in both models
+(1,500 images, 1.1 million pairs). Euclidean latent distances do not agree: one model's are about
+five times the other's, and two thirds of the images have a different nearest neighbour in each model.
+Under each model's pullback metric, the distances agree at the same scale. The dashed line is the
+best single rescaling of one model's distances onto the other's.</sub>
+
+<table>
+<tr>
+<td align="center" width="33%"><h2>0.871</h2>R@1 on FashionMNIST between VampPrior and Gaussian-prior VAEs, without pairs. A rotation fitted on the true pairs reaches 0.071.</td>
+<td align="center" width="33%"><h2>9 of 9</h2>image settings in which NGMA is ahead of every baseline, label-informed ones included.</td>
+<td align="center" width="33%"><h2>38%</h2>of 10,000 held-out lung cells matched to themselves, between models trained on different cells (19,600 each). Chance is 0.01%.</td>
+</tr>
+</table>
+
+<details>
+<summary><b>New to unpaired alignment?</b></summary>
+<br>
+
+An *alignment map* sends the representation of each data point in one model to the representation
+of the same point in the other. With pairs, fitting it is regression. Without pairs, a single
+representation means nothing on its own. What each model still has is the distances between its
+representations and how they are distributed, and unpaired methods match those in the hope that
+the map that matches them is the alignment.
+
+That hope rests on the distances being the same in both models. Euclidean latent distances are
+not: a model can stretch its latent space without changing what it decodes, and a different prior
+does exactly that (the figure above). The *pullback metric* measures a short step in latent space
+by how much it changes the decoded output, pixels for images and gene counts for cells, so it
+follows the data rather than the coordinates. We compute it from an ensemble of eight decoders,
+whose metric grows where they disagree, which is away from the data.
+
+We score an alignment by R@1: the fraction of held-out data points whose own representation in the
+other model is ranked first among all of them.
+</details>
+
+<details>
+<summary><b>Know vec2vec, Rosetta or the Platonic representation hypothesis?</b></summary>
+<br>
+
+Recent unpaired methods align text encoders whose loss puts the representations on a sphere,
+where matching similarity kernels makes the alignment a rotation; Rosetta imposes the sphere on
+vision encoders before aligning them. We ask what two models share when nothing forces a sphere on them.
+Under the metric manifold hypothesis (H1) and model coordinates (H2), any two models of one
+data-generating process, whether built from encoders, decoders or both, share the pullback of the
+data metric. The alignment map is an isometry of it that carries one distribution of
+representations onto the other.
+
+That map need not be a rotation, and between VAEs with different priors it is far from one. On
+FashionMNIST, a Procrustes rotation fitted on the true pairs reaches R@1 0.071 between a VampPrior
+and a Gaussian-prior model; NGMA reaches 0.871 without pairs, and the best unpaired baseline,
+Rosetta, 0.065. NGMA is ahead of Rosetta and mini-vec2vec in every setting of Table 1, and at every share of images
+the two samples have in common.
+</details>
+
+<details>
+<summary><b>Sceptical?</b></summary>
+<br>
+
+Good. Here is where NGMA falls short, and what we do not claim.
+
+- **Near-symmetries break some draws.** On CelebA, a left-right flip nearly preserves the
+  distribution of faces. 7 of 35 draws fail, and on every one the map sends faces to their mirror
+  images (mirror R@1 0.87–0.99, true R@1 at most 0.11). Without pairs, the mirror alignment is
+  almost indistinguishable from the true one.
+- **The fused coupling is not always the best coupling.** On the sphere, from 8 landmarks on, it
+  removes the seeds that GW alone leaves far from the truth, but the LDD-LP alone has the smaller median error for 32 to
+  256 landmarks.
+- **Some leads are within the spread.** On FashionMNIST with Gaussian priors, NGMA reaches
+  0.719 ± 0.112 and Rosetta 0.710 ± 0.040.
+- **Pairs still help.** The same map class fitted on the true pairs reaches 0.995–1.000 in every
+  image setting.
+- **Equal dimensions only.** NGMA's maps act on whole latent spaces of equal dimension. When two
+  models choose different dimensions, the alignment is still a bijection between their copies of
+  the data manifold, but learning it is future work.
+- **One modality.** The theory covers models of one data-generating process. Across modalities,
+  the shared source of both data manifolds, and a metric that both induce, is the next step.
+</details>
+
+## The theory in one figure
+
+<p align="center"><img src="assets/overview.png" width="100%" alt="Overview: the alignment map as a change of coordinates on the data manifold, identifiability under symmetry breaking, and recovery from samples through a coupling."></p>
+
+Each model is a chart of the data manifold (H2), so the alignment map A = f<sub>b</sub><sup>−1</sup> ∘ f<sub>a</sub>
+is a change of coordinates, and under the pullback metric each latent space is a metric measure
+space isomorphic to the data's. A is *identifiable*, the only isomorphism between the two latent
+spaces, if and only if no isometry of the data manifold other than the identity preserves the data
+distribution (symmetry breaking, C1). Without pairs, a coupling of the two samples takes the place
+of the pairs. Under C1 the Gromov–Wasserstein optimum is unique and lies on the graph of A. If
+almost every point has its own distribution of distances to the others (distinguishable points,
+C2), a linear program between those distributions, the LDD-LP, finds the same optimum. NGMA fuses
+the two problems, which keeps the unique optimum under C1 without needing C2. The coupling, and with
+it A, is recovered exactly when both models encode the same observations, even without
+identifiability, and consistently when they encode independent samples.
+
+## Results
+
+### On the sphere, symmetry breaking decides recovery
+
+<p align="center"><img src="assets/sphere_measures.png" width="100%" alt="Three measures on the sphere: uniform, one von Mises-Fisher, and a generic mixture; only the mixture breaks every symmetry."></p>
+<p align="center"><img src="assets/sphere.png" width="100%" alt="Rotation error against the number of landmarks, the three couplings on the mixture, and the margin test."></p>
+
+On the sphere we choose the alignment ourselves: model a sees the data as they are, model b rotates
+them by a fixed R. Under the uniform measure and a single von Mises–Fisher, some rotations preserve
+the measure, and the error of the recovered rotation stays large however many landmarks we use (a).
+The two mixtures break every symmetry, and from independent samples the LDD-LP recovers R to
+within 5°, even for the mixture with equal weights and concentrations, whose points' distance
+distributions collide along curves. When both samples are the same points in a different order, it
+recovers R exactly for every measure, the uniform one included, from 4 landmarks on. On the
+mixture, GW alone leaves 4 to 8 of 10 seeds more than 90° from R at every k up to 256, and NGMA's
+coupling none from k = 8 (b). The margin test (c) asks, from samples, whether points at separation t have
+different distance distributions. It never rejects equality for the two symmetric measures, and for
+the mixtures only for pairs of points far apart.
+
+### Images: VAEs aligned on samples that share no image
+
+R@1 among 10,000 held-out test images (19,962 on CelebA), with the two samples drawn disjoint
+(3,000 images per side, 7,500 on CelebA), as mean ± s.d. over model pairings and draws. The
+unpaired baselines are Rosetta, mini-vec2vec, GENOT-Q and LFM, the label-informed ones RelReps and
+RelGeo. The last two columns fit NGMA's map and a Procrustes rotation on the true pairs.
+
+| | Prior | **NGMA** | Best unpaired | Best label-informed | NGMA's map, true pairs | Procrustes, true pairs |
+|---|---|---|---|---|---|---|
+| MNIST | Gaussian | **0.967** ± 0.021 | 0.941 ± 0.028 | 0.525 ± 0.069 ‡ | 0.998 | 0.955 |
+| | VampPrior | **0.989** ± 0.012 | 0.930 ± 0.012 | 0.552 ± 0.235 | 1.000 | 0.936 |
+| | cross-prior | **0.955** ± 0.008 | 0.571 ± 0.021 | 0.319 ± 0.152 | 0.999 | 0.512 |
+| FashionMNIST | Gaussian | **0.719** ± 0.112 | 0.710 ± 0.040 | 0.159 ± 0.134 | 0.997 | 0.782 |
+| | VampPrior | **0.979** ± 0.027 | 0.656 ± 0.045 | 0.355 ± 0.131 | 1.000 | 0.747 |
+| | cross-prior | **0.871** ± 0.049 | 0.065 ± 0.019 | 0.098 ± 0.033 | 0.998 | 0.071 |
+| CelebA | Gaussian | **0.804** ± 0.375 (12/15) | 0.567 ± 0.453 (8/15) | 0.445 ± 0.033 ‡ | 0.995 | 0.993 |
+| | VampPrior | **0.818** ± 0.372 (8/10) | 0.616 ± 0.415 † (7/10) | 0.387 ± 0.139 | 0.996 | 0.995 |
+| | cross-prior | **0.818** ± 0.372 (8/10) | 0.757 ± 0.372 (8/10) | 0.220 ± 0.120 | 0.996 | 0.990 |
+
+<sub>The best unpaired baseline is Rosetta, or mini-vec2vec where marked †. The best label-informed
+baseline is RelGeo, or RelReps where marked ‡. On CelebA, parentheses count draws reaching R@1 of
+0.3; the failed draws are the mirror alignments described under *Sceptical?* above.</sub>
+
+On MNIST and FashionMNIST, between models with different priors, the alignment is far from a
+rotation: every method that fits one falls behind, and NGMA without pairs exceeds even the Procrustes rotation fitted on the true
+pairs. When both samples are the same images, NGMA reaches 0.990–0.999 in every MNIST and
+FashionMNIST setting.
+
+### Single-cell models trained on different cells
+
+<p align="center"><img src="assets/lung.png" width="100%" alt="R@1 and cell-type accuracy against the number of training cells per model, for NGMA and the baselines."></p>
+
+Two scVI models of Tabula Sapiens lung cells, trained on disjoint sets of cells, so they share only
+the tissue. Without pairs, NGMA retrieves the true partner of up to 38% of 10,000 held-out cells
+(chance 1 in 10,000) and the right cell type for nine in ten. It is above every baseline on every
+sample, RelGeo with cell-type labels included. With Euclidean latent distances it fails on most
+draws, and with the pullback metric of the scVI decoder alone, instead of the ensemble, it is lower
+on 17 of 18 draws.
+
+## NGMA, as the code runs it
 
 The method's entry points are in `scripts/`; every experiment calls them.
 
@@ -70,9 +222,31 @@ GENOT-Q on the Euclidean and on the pullback cost (`genot_q.py`), Rosetta and mi
 through the authors' package (`linear_baselines.py`, `rosetta.py`). `baseline_metrics.py` is the
 retrieval and CSLS scoring they share.
 
-## Table 1: the image experiments
+## Reproducing the paper
 
-`bash bash/images.sh <mnist|fmnist|celeba>` runs, for one dataset, every step below and skips
+The repository reproduces three results of the paper. Each has one driver in `bash/` and its own
+code in `experiments/`:
+
+| result | driver | code |
+|---|---|---|
+| Table 1: instance retrieval between independently trained VAEs on MNIST, FashionMNIST, CelebA | `bash/images.sh` | `experiments/images/` |
+| Figure 3: alignment and the margin test on the sphere | `bash/sphere.sh` | `experiments/sphere/` |
+| Figure 4 and the lung table: scVI models of Tabula Sapiens lung cells | `bash/lung.sh` | `experiments/lung/` |
+
+### Install
+
+```bash
+pip install -e .          # Python >= 3.10; JAX with GPU support as your platform requires
+export PYTHONPATH=src     # every entry point needs this
+```
+
+Two parts run in their own environments: Rosetta and mini-vec2vec through the authors' package
+(`pip install -e '.[rosetta]'`, see `baselines/rosetta.py`), and the lung experiment's scVI
+models (`pip install -e '.[lung]'`).
+
+### Table 1: the image experiments
+
+`bash bash/images.sh <mnist|fmnist|celeba>` runs, for one dataset, every step above and skips
 outputs that exist; `bash bash/images.sh table` then writes
 `results/tables/main_results.tex` and `results/tables/Headline_summary_disjoint.csv`
 (`experiments/images/table1.py`). Data: MNIST and FashionMNIST download themselves; CelebA is
@@ -98,7 +272,8 @@ Every step is deterministic given its seed, but k-means, the QAP solver and GPU 
 in their last digits across machines and library builds, so a rerun on other hardware agrees with
 the paper to about 10⁻³ in R@1, not to the last digit.
 
-Output layout:
+<details>
+<summary>Output layout</summary>
 
 ```
 checkpoints/<dataset>_<prior>/vae_<x>/best_model.pickle
@@ -110,8 +285,9 @@ results/ceilings/<root>_s<S>.json               the supervised ceiling
 results/baselines/{cached,relreps,relgeo,genot,rosetta_wp,minivec2vec_official}/
 results/tables/
 ```
+</details>
 
-## Figure 3: the sphere
+### Figure 3: the sphere
 
 `bash bash/sphere.sh` runs the alignments on the four measures of `configs/sphere_measures.yaml`
 (independent and permuted samples, seeds 10–19, `experiments/sphere/run.py`, settings in
@@ -122,11 +298,14 @@ mixtures with independent samples, NGMA's coupling and its annealed GW alone. Th
 fitted in closed form. CPU only; the full-cloud fused coupling takes one to three hours per run on
 one thread, so the whole grid takes about a day at eight runs in parallel.
 
-## The lung experiment: Figure 4 and the lung table
+### The lung experiment: Figure 4 and the lung table
 
 Two scVI models of the same RNA data, trained on different cells or on the same cells with
 different seeds, aligned with NGMA's pullback geometry and scored on held-out cells that both
 models encode. The scripts are in `experiments/lung/`.
+
+<details>
+<summary>The steps</summary>
 
 - **Data.** Tabula Sapiens lung, the 62,954 10x 3' v3.1 cells of four donors, 3,000 genes, raw
   counts; Smart-seq2 cells dropped. 34 cell types, 4 compartments. No batch covariate. Inputs:
@@ -167,6 +346,7 @@ models encode. The scripts are in `experiments/lung/`.
   FOSCTTM, CSLS@1 and the ceilings, from each fit's saved mapped eval cells) and
   `read_baselines.py` (the baselines a → b). `paper_tables.py` writes the lung tables, Figure 4
   and the numbers the text quotes; the paper's lung table is `tab_lung_baselines.tex`.
+</details>
 
 Everything lives under one root directory outside the repository: `lung10x.h5ad`, `split.npz`,
 `split_meta.json`, `labels.npz`, then `fits/`, `geometry/`, `sources/`, `carves/`, `results/`,
@@ -183,7 +363,7 @@ order, or the ones named; each skips outputs that exist. `PY_SCVI` is an environ
 environment, for the rest. The geometry, couplings and fits run on a GPU; the models, heads and
 baselines on CPU.
 
-## Layout
+### Layout
 
 ```
 src/ngma/             models (VAE, priors), losses, training, geometry (segment lengths, metric
@@ -196,4 +376,26 @@ experiments/sphere/   the sphere experiment and Figure 3
 experiments/lung/     the lung experiment, its tables and Figure 4
 bash/                 one driver per experiment: images.sh, sphere.sh, lung.sh
 configs/              the VAE configs and the sphere settings
+assets/               the figures of this README
 ```
+
+## Citation
+
+```bibtex
+@inproceedings{syrota2026identifiable,
+  title     = {Identifiable alignment of unpaired representations},
+  author    = {Syrota, Stas and Lopez I Serrano, Albert and Franck, Johanne and Hauberg, S{\o}ren},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2026}
+}
+```
+
+## Acknowledgements
+
+This work was supported by a research grant (42062) from VILLUM FONDEN. This project received
+funding from the European Research Council (ERC) under the European Union's Horizon research and
+innovation programme (grant agreement 101125993). The work was partly funded by the Novo Nordisk
+Foundation through the Center for Basic Machine Learning Research in Life Science (NNF20OC0062606).
+We acknowledge the DTU Computing Center for awarding this project access to the LUMI
+supercomputer, owned by the EuroHPC Joint Undertaking, hosted by CSC (Finland) and the LUMI
+consortium.
