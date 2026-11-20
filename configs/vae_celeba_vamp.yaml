@@ -1,0 +1,32 @@
+# VAE of the celeba vamp model pair. One model per seed:
+#   python scripts/train_vae.py --config-name vae_celeba_vamp training.seed=42 general.run_name=vae_a
+# (seeds: a=42, b=123, c=7, d=8).
+defaults:
+  - datamodule: celeba
+  - loss: nelbo_sigma
+  - model: celeba_vae_ilms_vamp
+  - optimizer: adamax
+  - scheduler: warm_exp_decay
+  - grad_clipping: global_norm
+  - training: train
+  - _self_
+
+general:
+  run_name: unnamed_run
+
+training:
+  checkpoint: checkpoints/celeba_vamp/${general.run_name}
+  num_epochs: 150
+
+model:
+  params:
+    vamp_tied_logvar_min: -8   # floor on the log-variance the mixture components take from the encoder
+
+loss:
+  params:
+    beta_warmup_epochs: 30
+    beta_min_frac: 0.0625      # the warm-up starts at beta = 1 instead of 0
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d_%H-%M-%S}

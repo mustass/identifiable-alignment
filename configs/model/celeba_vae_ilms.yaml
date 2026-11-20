@@ -1,0 +1,5 @@
+class_name: ngma.models.celeba_vae_ilms.VAE
+params:
+  z_dim: 32
+  num_decoders: 8
+  learn_sigma: true

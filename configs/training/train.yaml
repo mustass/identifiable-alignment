@@ -1,0 +1,8 @@
+class_name: ngma.training.VAETrainer
+lr: 1e-3
+num_epochs: 500
+early_stopping_patience: 200
+early_stopping_grace: 0.05
+eval_every: 5
+seed: 42
+checkpoint: ???

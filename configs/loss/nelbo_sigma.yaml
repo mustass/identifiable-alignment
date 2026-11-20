@@ -1,0 +1,11 @@
+# beta-VAE objective with a learned observation std (ngma.losses.NelboLoss, rec_type l2_sigma):
+# the effective weight on the KL is beta * sigma^2. Every decoder of the ensemble is fitted to
+# the data on its own (rec_target per_decoder). beta ramps up linearly over the warm-up epochs.
+class_name: ngma.losses.NelboLoss
+params:
+  beta: 16
+  rec_type: l2_sigma
+  rec_target: per_decoder
+  free_bits: 0.25
+  beta_warmup_epochs: 100
+  beta_min_frac: 0.0

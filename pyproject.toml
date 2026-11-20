@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ngma"
+version = "1.0.0"
+description = "Neural Gromov-Monge Alignment: identifiable alignment of unpaired representations"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "jax",
+    "flax<0.10.0",
+    "optax",
+    "pot",
+    "hydra-core",
+    "omegaconf",
+    "pyyaml",
+    "torch",
+    "torchvision",
+    "matplotlib",
+    "tueplots",
+]
+
+[project.optional-dependencies]
+# the scVI lung experiment (experiments/lung), in its own environment
+lung = ["scvi-tools", "anndata"]
+# the Rosetta and mini-vec2vec baselines, through the authors' package, in their own environment
+rosetta = ["unpaired-rosetta @ git+https://github.com/dominik-schnaus/unpaired-rosetta@fdfad84ea488f29702a61a455be71622c4ff5d049"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

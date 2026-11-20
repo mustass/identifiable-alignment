@@ -1,0 +1,24 @@
+# The measures on the round sphere S^2 and the rotation that relates the two samples. Read by
+# experiments/sphere/run.py and experiments/sphere/margin_test.py through ngma.data.sphere.
+rotation:            # the ground-truth alignment A = R
+  axis: [0.0, 0.70710678, 0.70710678]
+  angle_deg: 60.0
+
+uniform: {}
+
+vmf:
+  mu: [0.4855, 0.4864, 0.7264]
+  kappa: 8.0
+
+mixture_vmf:                         # P_mix: three vMF components
+  mus:
+    - [0.5555, -0.1482, 0.8182]
+    - [0.1684,  0.5940, 0.7866]
+    - [0.4511,  0.8042, -0.3869]
+  kappas:  [8.0, 12.0, 16.0]
+  weights: [0.42, 0.33, 0.25]
+
+mixture_vmf_eq:                      # P_mix with equal weights and concentrations
+  mus: mixture_vmf                   # the same three centres
+  kappas:  [12.0, 12.0, 12.0]
+  weights: [0.3333333333, 0.3333333333, 0.3333333334]
